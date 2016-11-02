@@ -44,14 +44,15 @@ export default function(dirs, platform, callback){
 		})).then(function(items){
 			var hash = {};
 			var fileHash = {};
+			var extensionFileHash = {};
 			// 根据‘@providesModule modName’分析出所有导出的模块
 			var mods = items.map(function(item){
 				var match = item.content.match(/@providesModule\s+([a-zA-Z\-0-9\._]+)/);
 
 				try{
 					item = {
-						file: item.file,
-						code: transBabel(item.content)
+						// file: item.file,
+						content: transBabel(item.content)
 					};
 				}catch(e){
 					console.log(e);
@@ -62,6 +63,7 @@ export default function(dirs, platform, callback){
 					item.name = match[1];
 
 					hash[item.name] = item;
+					fileHash[item.file] = item;
 				}
 
 				fileHash[item.file] = item;
@@ -78,24 +80,28 @@ export default function(dirs, platform, callback){
 			mods.forEach(function(mod){
 				var outerDeps = [];
 				var innerDeps = [];
-				var modDeps = [];
+				// var modDeps = [];
 				mod.deps.forEach(function(modPath){
 					if(hash[modPath]){
-						modDeps.push(modPath);
+						// modDeps.push(modPath);
+						innerDeps.push(modPath);
 					}else{
 						if(/^\.{1,2}\//.test(modPath)){
+							// innerDeps.push(modPath);
+							// 解析相对路径
+							modPath = path.resolve(path.dirname(mod.file), modPath);
+							if(!/\.(js|png)$/.test(modPath)){
+								let rModPath = modPath;
+								if(fs.existsSync(modPath + ".native.js")){
+									modPath += ".native.js";
+								}else if(fs.existsSync(modPath + ".js")){
+									modPath += ".js";
+								}else{
+									console.error(`无法找到模块${modPath}，来自文件${mod.file}的依赖`);
+								}
+								extensionFileHash[rModPath] = modPath;
+							}
 							innerDeps.push(modPath);
-							// // 解析相对路径
-							// modPath = path.resolve(path.dirname(mod.file), modPath);
-							// if(!/\.(js|png)$/.test(modPath)){
-							// 	if(fs.existsSync(modPath + ".native.js")){
-							// 		modPath += ".native.js";
-							// 	}else if(fs.existsSync(modPath + ".js")){
-							// 		modPath += ".js";
-							// 	}else{
-							// 		console.error(`无法找到模块${modPath}，来自文件${mod.file}的依赖`);
-							// 	}
-							// }
 							// if(fileHash[modPath]){
 							// 	modDeps.push(fileHash[modPath].name);
 							// 	//console.log(fileHash[modPath].name);
@@ -124,14 +130,15 @@ export default function(dirs, platform, callback){
 
 				mod.outerDeps = outerDeps;
 				mod.innerDeps = innerDeps;
-				mod.modDeps = modDeps;
+				// mod.modDeps = modDeps;
 				delete mod.deps;
 			});
 
 			callback({
 				// mods: mods,
-				hash: hash,
-				fileHash: fileHash
+				// hash: hash,
+				fileHash: fileHash,
+				extensionFileHash: extensionFileHash
 			});
 
 			// console.log(_outerDeps);
