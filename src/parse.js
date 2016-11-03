@@ -5,7 +5,11 @@ import console from "cli-console";
 import findDeps from "./find-deps";
 import transBabel from "./trans-babel";
 
-export default function(dirs, platform, callback){
+const extensions = ["", ".native.js", ".js", "/index.js"];
+
+export default function(dirs, entries, platform, callback, depPackages){
+	depPackages = depPackages || [];
+
 	const commonIgnore = /\/__(tests|mocks)__\//;
 	const platformIgnore = {
 		"ios": /\.android\.js$/,
@@ -17,7 +21,10 @@ export default function(dirs, platform, callback){
 		// 找出dirs目录下所有的js文件
 		return function(callback){
 			utils.readFiles(dir, ".js", true, function(_files){
-				files = files.concat(_files);
+				files = files.concat(_files.filter(function(file){
+					return !/\/node_modules\//.test(file.replace(dir, ""));
+				}));
+
 				callback();
 			});
 		};
@@ -51,24 +58,28 @@ export default function(dirs, platform, callback){
 
 				try{
 					item = {
-						// file: item.file,
+						file: item.file,
 						content: transBabel(item.content)
 					};
 				}catch(e){
-					console.log(e);
-					throw e;
+					console.error("trans babel error");
+					console.log(item.file);
+					// console.log(e);
+					item = {
+						file: item.file,
+						content: item.content
+					};
 				}
 
 				if(match){
 					item.name = match[1];
 
 					hash[item.name] = item;
-					fileHash[item.file] = item;
 				}
 
 				fileHash[item.file] = item;
 
-				let deps = findDeps(item.code);
+				let deps = findDeps(item.content, item.file);
 				item.deps = deps;
 
 				return item;
@@ -81,52 +92,84 @@ export default function(dirs, platform, callback){
 				var outerDeps = [];
 				var innerDeps = [];
 				// var modDeps = [];
+				var replaceModPath = {};
 				mod.deps.forEach(function(modPath){
+					// 转换导出的模块为内部模块
 					if(hash[modPath]){
-						// modDeps.push(modPath);
-						innerDeps.push(modPath);
-					}else{
-						if(/^\.{1,2}\//.test(modPath)){
-							// innerDeps.push(modPath);
-							// 解析相对路径
-							modPath = path.resolve(path.dirname(mod.file), modPath);
-							if(!/\.(js|png)$/.test(modPath)){
-								let rModPath = modPath;
-								if(fs.existsSync(modPath + ".native.js")){
-									modPath += ".native.js";
-								}else if(fs.existsSync(modPath + ".js")){
-									modPath += ".js";
-								}else{
-									console.error(`无法找到模块${modPath}，来自文件${mod.file}的依赖`);
+						let originalPath = modPath;
+						modPath = path.relative(path.dirname(mod.file), hash[modPath].file);
+						if(!/^\.{1,2}\//.test(modPath)){
+							modPath = "./" + modPath;
+						}
+						replaceModPath[originalPath] = modPath;
+					}
+					// 转换入口包内的模块为内部模块
+					if(!/^\.{1,2}\//.test(modPath) && depPackages.indexOf(modPath) === -1){
+						let modName = modPath.split("/")[0];
+						if(depPackages.indexOf(modName) !== -1){
+							var modDir = dirs.find(function(dir){
+								return dir.split("/").pop() === modName;
+							});
+
+							if(modDir){
+								let originalPath = modPath;
+
+								modPath = path.relative(path.dirname(mod.file), path.join(modDir, "../" + modPath));
+								if(!/^\.{1,2}\//.test(modPath)){
+									modPath = "./" + modPath;
 								}
-								extensionFileHash[rModPath] = modPath;
+								replaceModPath[originalPath] = modPath;
 							}
-							innerDeps.push(modPath);
-							// if(fileHash[modPath]){
-							// 	modDeps.push(fileHash[modPath].name);
-							// 	//console.log(fileHash[modPath].name);
-							// }else{
-							// 	//console.log(modPath);
-							// 	modPath = modPath.split("/node_modules/").pop();
-							// 	innerDeps.push(modPath);
-
-							// 	if(_innerDeps.indexOf(modPath) === -1){
-							// 		_innerDeps.push(modPath);
-							// 	}
-							// }
-						}else{
-							outerDeps.push(modPath);
-
-							if(/[A-Z]/.test(modPath) && !/\//.test(modPath)){
-								console.error(`需要导出的模块${modPath}未找到`);
-							}
-
-							// if(_outerDeps.indexOf(modPath) === -1){
-							// 	_outerDeps.push(modPath);
-							// }
 						}
 					}
+
+					if(/^\.{1,2}\//.test(modPath)){
+						// innerDeps.push(modPath);
+						// 解析相对路径
+						modPath = path.resolve(path.dirname(mod.file), modPath);
+
+						let existsFile = false;
+						for(let ext of extensions){
+							if(fs.existsSync(modPath + ext) && fs.statSync(modPath + ext).isFile()){
+								if(ext){
+									extensionFileHash[modPath] = modPath = modPath + ext;
+								}
+								existsFile = true;
+								break;
+							}
+						}
+						if(!existsFile){
+							console.error(`无法找到模块${modPath}，来自文件${mod.file}的依赖`);
+						}
+						innerDeps.push(modPath);
+						// if(fileHash[modPath]){
+						// 	modDeps.push(fileHash[modPath].name);
+						// 	//console.log(fileHash[modPath].name);
+						// }else{
+						// 	//console.log(modPath);
+						// 	modPath = modPath.split("/node_modules/").pop();
+						// 	innerDeps.push(modPath);
+
+						// 	if(_innerDeps.indexOf(modPath) === -1){
+						// 		_innerDeps.push(modPath);
+						// 	}
+						// }
+					}else{
+						outerDeps.push(modPath);
+
+						if(/[A-Z]/.test(modPath) && !/\//.test(modPath)){
+							console.error(`需要导出的模块${modPath}未找到`);
+						}
+
+						// if(_outerDeps.indexOf(modPath) === -1){
+						// 	_outerDeps.push(modPath);
+						// }
+					}
 				});
+				
+				if(Object.keys(replaceModPath).length){
+					mod.content = findDeps.replace(mod.content, replaceModPath);
+				}
 
 				mod.outerDeps = outerDeps;
 				mod.innerDeps = innerDeps;
@@ -134,11 +177,33 @@ export default function(dirs, platform, callback){
 				delete mod.deps;
 			});
 
-			callback({
-				// mods: mods,
-				// hash: hash,
-				fileHash: fileHash,
-				extensionFileHash: extensionFileHash
+			(function parse(files, depChain, callback){
+				utils.asyncList(files.map(function(file){
+					var mod = fileHash[file];
+
+					return function(callback){
+						if(!mod){
+							console.warn(`读取的文件列表中没有文件${file}`);
+							callback();
+							return;
+						}
+
+						if(mod.depChains){
+							mod.depChains.push(depChain);
+							callback();
+						}else{
+							mod.depChains = [depChain];
+							parse(mod.innerDeps, [].concat(depChain, mod.file), callback);
+						}
+					};
+				})).then(callback);
+			})(entries, [], function(){
+				callback({
+					// mods: mods,
+					// hash: hash,
+					fileHash: fileHash,
+					extensionFileHash: extensionFileHash
+				});
 			});
 
 			// console.log(_outerDeps);
