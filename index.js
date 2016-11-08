@@ -2,6 +2,7 @@ import path from "path";
 import utils from "node-pearls";
 import console from "cli-console";
 import parse from "./src/parse";
+import removeUseStrict from "./src/remove-use-strict";
 
 const depPackages = ["react", "fbjs"];
 
@@ -28,25 +29,25 @@ export default function(platform){
 
 	return function(){
 		var entries;
-
+		// 定义入口文件
 		this.plugin("start", function(info){
 			if(info.packageJson.name === "react-native"){
 				entries = [
 					path.join(info.path, "Libraries/react-native/react-native.js"),
-					path.join(info.path, "Libraries/JavaScriptAppEngine/Initialization/InitializeJavaScriptAppEngine.js")
+					path.join(info.path, "Libraries/JavaScriptAppEngine/Initialization/InitializeJavaScriptAppEngine.js"),
+					path.join(info.path, "Libraries/BatchedBridge/BatchedBridgedModules/NativeModules.js")
 				];
 			}
 		});
-
+		// 清空默认的入口，使package不对react-native包进行处理
 		this.plugin("parse-entries", function(info){
 			if(info.packageJson.name === "react-native"){
 				while(info.entries.length){
-					// entries.unshift(info.entries.pop());
 					info.entries.pop();
 				}
 			}
 		});
-
+		// 加载react-native包
 		this.plugin("loader-complete", function(info){
 			if(info.packageJson.name === "react-native"){
 				let callback = this.async();
@@ -61,12 +62,18 @@ export default function(platform){
 				});
 			}
 		});
-
+		// 重新设置入口
 		this.plugin("before-parse-single", function(info){
 			if(info.packageJson.name === "react-native"){
 				entries.forEach(function(entry){
 					info.entries.push(entry);
 				});
+			}
+		});
+		// 移除打包完后的"use strict"，因为react-native源码中在顶层使用this，严格模式下顶层的this是undefined
+		this.plugin("before-write-bundle", function(info){
+			if(info.packageJson.name === "react-native"){
+				return removeUseStrict(info.content);
 			}
 		});
 	};
