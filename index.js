@@ -1,23 +1,24 @@
 import path from "path";
+import glob from "glob";
 import utils from "node-pearls";
 import console from "cli-console";
 import parse from "./src/parse";
 import removeUseStrict from "./src/remove-use-strict";
 
-const depPackages = ["react", "fbjs"];
-
-const setupMod = "InitializeJavaScriptAppEngine";
-
-const extensions = ["", ".native.js", ".js", "/index.js"];
+// const depPackages = ["react", "fbjs"];
+const depPackages = [];
 
 function _parse(reactNativeDir, entries, platform, callback){
 	var dirs = depPackages.map(function(modName){
 		return utils.findNodeModules(reactNativeDir, modName);
 	}).filter(dir => dir);
+	var packageJsons = dirs.map(function(dir){
+		return utils.readJson.sync(path.join(dir, "package.json"));
+	});
 	dirs.unshift(reactNativeDir);
 	
 	parse(dirs, entries, platform, function({fileHash, extensionFileHash}){
-		callback(fileHash, extensionFileHash);
+		callback(fileHash, extensionFileHash, packageJsons);
 	}, ["react-native"].concat(depPackages));
 }
 
@@ -33,10 +34,29 @@ export default function(platform){
 		this.plugin("start", function(info){
 			if(info.packageJson.name === "react-native"){
 				entries = [
+					// 项目对外暴露默认入口
 					path.join(info.path, "Libraries/react-native/react-native.js"),
-					path.join(info.path, "Libraries/JavaScriptAppEngine/Initialization/InitializeJavaScriptAppEngine.js"),
-					path.join(info.path, "Libraries/BatchedBridge/BatchedBridgedModules/NativeModules.js")
+					// 框架启动入口
+					path.join(info.path, "Libraries/Core/InitializeCore.js"),
+					// 原生模块暴露入口
+					path.join(info.path, "Libraries/BatchedBridge/NativeModules.js")
+					// path.join(info.path, "Libraries/JavaScriptAppEngine/Initialization/InitializeJavaScriptAppEngine.js"),
+					// path.join(info.path, "Libraries/BatchedBridge/BatchedBridgedModules/NativeModules.js")
 				];
+				// 对react模块暴露文件
+				entries = entries.concat(glob.sync("lib/*.js", {
+					cwd: info.path
+				}).map(file => path.join(info.path, file)));
+			}else if(info.packageJson.name === "react"){
+				if(!info.packageJson.dependencies){
+					info.packageJson.dependencies = {};
+				}
+				info.packageJson.dependencies["react-native"] = "^0.37.0";
+			}else if(info.packageJson.name === "react-clone-referenced-element"){
+				if(!info.packageJson.dependencies){
+					info.packageJson.dependencies = {};
+				}
+				info.packageJson.dependencies["react"] = "~15.3.2";
 			}
 		});
 		// 清空默认的入口，使package不对react-native包进行处理
@@ -51,13 +71,21 @@ export default function(platform){
 		this.plugin("loader-complete", function(info){
 			if(info.packageJson.name === "react-native"){
 				let callback = this.async();
-				_parse(info.path, entries, platform, function(loadCache, extensionFileHash){
+				_parse(info.path, entries, platform, function(loadCache, extensionFileHash, packageJsons){
 					for(let file in loadCache){
 						info.loadCache[file] = loadCache[file];
 					}
 					for(let file in extensionFileHash){
 						info.extensionFileHash[file] = extensionFileHash[file];
 					}
+					var packageJson = info.packageJson;
+					["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].forEach(function(key){
+						packageJsons.forEach(function(pJson){
+							if(pJson[key]){
+								packageJson[key] = Object.assign(packageJson[key] || {}, pJson[key]);
+							}
+						});
+					});
 					callback();
 				});
 			}

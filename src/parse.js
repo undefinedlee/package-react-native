@@ -3,9 +3,11 @@ import path from "path";
 import utils from "node-pearls";
 import console from "cli-console";
 import findDeps from "./find-deps";
+import removeDev from "./remove-dev";
 import transBabel from "./trans-babel";
+import glob from "glob";
 
-const extensions = ["", ".native.js", ".js", "/index.js"];
+const extensions = ["", ".native.js", ".js.flow", ".js", "/index.js"];
 
 export default function(dirs, entries, platform, callback, depPackages){
 	depPackages = depPackages || [];
@@ -15,27 +17,36 @@ export default function(dirs, entries, platform, callback, depPackages){
 		"ios": /\.android\.js$/,
 		"android": /\.ios\.js$/
 	}[platform];
+	const reactNativeRegex = /\/react-native\//;
 
 	var files = [];
 	utils.asyncList(dirs.map(function(dir){
 		// 找出dirs目录下所有的js文件
 		return function(callback){
-			utils.readFiles(dir, ".js", true, function(_files){
-				files = files.concat(_files.filter(function(file){
-					return !/\/node_modules\//.test(file.replace(dir, ""));
-				}));
+			var isReact = /\/react$/.test(dir);
+			var isFbjs = /\/fbjs$/.test(dir);
 
+			glob(isReact || isFbjs ? "**/@(*.js|*.js.flow)" : "**/*.js", {
+				cwd: dir,
+				ignore: isReact ? ["node_modules/**/*", "dist/**/*"] : "node_modules/**/*"
+			}, function(err, _files){
+				files = files.concat(_files.map(file => {
+					return {
+						dir: dir,
+						file: path.join(dir, file)
+					};
+				}));
 				callback();
 			});
 		};
 	})).then(function(){
 		utils.asyncList(files.filter(function(file){
 			// 过滤无效的js
-			return !commonIgnore.test(file) && !platformIgnore.test(file);
+			return !commonIgnore.test(file.file) && !platformIgnore.test(file.file);
 		}).map(function(file){
 			// 读取所有js的内容
 			return function(callback){
-				fs.readFile(file, {
+				fs.readFile(file.file, {
 					encoding: "utf8"
 				}, function(err, content){
 					if(err){
@@ -43,7 +54,8 @@ export default function(dirs, entries, platform, callback, depPackages){
 					}
 
 					callback({
-						file: file,
+						dir: file.dir,
+						file: file.file,
 						content: content
 					});
 				});
@@ -58,21 +70,29 @@ export default function(dirs, entries, platform, callback, depPackages){
 
 				try{
 					item = {
+						dir: item.dir,
 						file: item.file,
-						content: transBabel(item.content)
+						content: removeDev(transBabel(item.content))
 					};
 				}catch(e){
 					console.error("trans babel error");
 					console.log(item.file);
 					// console.log(e);
 					item = {
+						dir: item.dir,
 						file: item.file,
 						content: item.content
 					};
 				}
 
-				if(match){
+				if(match && (!hash[item.name] || !reactNativeRegex.test(hash[item.name].file))){
 					item.name = match[1];
+
+					// if(hash[item.name]){
+					// 	console.log(`模块${item.file}重复导出`);
+					// 	console.log(hash[item.name].file);
+					// 	console.log(item.file);
+					// }
 
 					hash[item.name] = item;
 				}
@@ -94,34 +114,40 @@ export default function(dirs, entries, platform, callback, depPackages){
 				// var modDeps = [];
 				var replaceModPath = {};
 				mod.deps.forEach(function(modPath){
-					// 转换导出的模块为内部模块
 					if(hash[modPath]){
-						let originalPath = modPath;
-						modPath = path.relative(path.dirname(mod.file), hash[modPath].file);
-						if(!/^\.{1,2}\//.test(modPath)){
-							modPath = "./" + modPath;
-						}
-						replaceModPath[originalPath] = modPath;
-					}
-					// 转换入口包内的模块为内部模块
-					if(!/^\.{1,2}\//.test(modPath) && depPackages.indexOf(modPath) === -1){
-						let modName = modPath.split("/")[0];
-						if(depPackages.indexOf(modName) !== -1){
-							var modDir = dirs.find(function(dir){
-								return dir.split("/").pop() === modName;
-							});
-
-							if(modDir){
-								let originalPath = modPath;
-
-								modPath = path.relative(path.dirname(mod.file), path.join(modDir, "../" + modPath));
-								if(!/^\.{1,2}\//.test(modPath)){
-									modPath = "./" + modPath;
-								}
-								replaceModPath[originalPath] = modPath;
+						if(hash[modPath].file.indexOf(mod.dir) === 0){
+							// 转换项目内部的导出的模块为内部模块
+							let originalPath = modPath;
+							modPath = path.relative(path.dirname(mod.file), hash[modPath].file);
+							if(!/^\.{1,2}\//.test(modPath)){
+								modPath = "./" + modPath;
 							}
+							replaceModPath[originalPath] = modPath;
+						}else{
+							// 转换项目外部的导出的模块为外部模块
+							replaceModPath[modPath] = modPath = hash[modPath].file.replace(mod.dir, "").replace(/^\//, "");
 						}
 					}
+
+					// // 转换入口包内的模块为内部模块
+					// if(!/^\.{1,2}\//.test(modPath) && depPackages.indexOf(modPath) === -1){
+					// 	let modName = modPath.split("/")[0];
+					// 	if(depPackages.indexOf(modName) !== -1){
+					// 		var modDir = dirs.find(function(dir){
+					// 			return dir.split("/").pop() === modName;
+					// 		});
+
+					// 		if(modDir){
+					// 			let originalPath = modPath;
+
+					// 			modPath = path.relative(path.dirname(mod.file), path.join(modDir, "../" + modPath));
+					// 			if(!/^\.{1,2}\//.test(modPath)){
+					// 				modPath = "./" + modPath;
+					// 			}
+					// 			replaceModPath[originalPath] = modPath;
+					// 		}
+					// 	}
+					// }
 
 					if(/^\.{1,2}\//.test(modPath)){
 						// innerDeps.push(modPath);
@@ -158,7 +184,7 @@ export default function(dirs, entries, platform, callback, depPackages){
 						outerDeps.push(modPath);
 
 						if(/[A-Z]/.test(modPath) && !/\//.test(modPath)){
-							console.error(`需要导出的模块${modPath}未找到`);
+							console.error(`需要导出的模块${modPath}未找到，来自文件${mod.file}的依赖`);
 						}
 
 						// if(_outerDeps.indexOf(modPath) === -1){
@@ -173,7 +199,6 @@ export default function(dirs, entries, platform, callback, depPackages){
 
 				mod.outerDeps = outerDeps;
 				mod.innerDeps = innerDeps;
-				// mod.modDeps = modDeps;
 				delete mod.deps;
 			});
 
@@ -199,17 +224,10 @@ export default function(dirs, entries, platform, callback, depPackages){
 				})).then(callback);
 			})(entries, [], function(){
 				callback({
-					// mods: mods,
-					// hash: hash,
 					fileHash: fileHash,
 					extensionFileHash: extensionFileHash
 				});
 			});
-
-			// console.log(_outerDeps);
-			// console.log(_innerDeps);
-			// console.log(hash["InitializeJavaScriptAppEngine"]);
-			// console.log(hash["InitializeJavaScriptAppEngine"].file);
 		}).catch(function(e){
 			throw e;
 		});
