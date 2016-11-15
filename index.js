@@ -51,11 +51,13 @@ export default function(platform){
 				if(!info.packageJson.dependencies){
 					info.packageJson.dependencies = {};
 				}
+				// 设置react对react-native的依赖版本
 				info.packageJson.dependencies["react-native"] = "^0.37.0";
 			}else if(info.packageJson.name === "react-clone-referenced-element"){
 				if(!info.packageJson.dependencies){
 					info.packageJson.dependencies = {};
 				}
+				// 设置react-clone-referenced-element对react的依赖版本
 				info.packageJson.dependencies["react"] = "~15.3.2";
 			}
 		});

@@ -4,7 +4,9 @@
   "description": "package react native",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test-build": "node build.js --test",
+    "postinstall": "node build.js"
   },
   "repository": {
     "type": "git",
