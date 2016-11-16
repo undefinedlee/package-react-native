@@ -8,7 +8,7 @@ import removeUseStrict from "./src/remove-use-strict";
 // const depPackages = ["react", "fbjs"];
 const depPackages = [];
 
-function _parse(reactNativeDir, entries, platform, callback){
+function _parse(reactNativeDir, entries, platform, config, callback){
 	var dirs = depPackages.map(function(modName){
 		return utils.findNodeModules(reactNativeDir, modName);
 	}).filter(dir => dir);
@@ -17,7 +17,7 @@ function _parse(reactNativeDir, entries, platform, callback){
 	});
 	dirs.unshift(reactNativeDir);
 	
-	parse(dirs, entries, platform, function({fileHash, extensionFileHash}){
+	parse(dirs, entries, platform, config, function({fileHash, extensionFileHash}){
 		callback(fileHash, extensionFileHash, packageJsons);
 	}, ["react-native"].concat(depPackages));
 }
@@ -73,7 +73,7 @@ export default function(platform){
 		this.plugin("loader-complete", function(info){
 			if(info.packageJson.name === "react-native"){
 				let callback = this.async();
-				_parse(info.path, entries, platform, function(loadCache, extensionFileHash, packageJsons){
+				_parse(info.path, entries, platform, info.config, function(loadCache, extensionFileHash, packageJsons){
 					for(let file in loadCache){
 						info.loadCache[file] = loadCache[file];
 					}

@@ -10,7 +10,7 @@ import glob from "glob";
 // 默认后缀查找顺序
 const extensions = ["", ".native.js", ".js.flow", ".js", "/index.js"];
 
-export default function(dirs, entries, platform, callback, depPackages){
+export default function(dirs, entries, platform, config, callback, depPackages){
 	depPackages = depPackages || [];
 
 	// 忽略项目中__tests__、__mocks__目录下的文件
@@ -82,6 +82,10 @@ export default function(dirs, entries, platform, callback, depPackages){
 						file: item.file,
 						content: transBabel(item.content) //removeDev(transBabel(item.content))
 					};
+
+					if(config.presets){
+						item.content = utils.removeInvalid(item.content, config.presets);
+					}
 				}catch(e){
 					console.error("trans babel error");
 					console.log(item.file);

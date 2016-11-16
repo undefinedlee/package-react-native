@@ -120,20 +120,26 @@ function write(file, content){
 	});
 }
 
+var ignores = [
+	path.join(__dirname, "build.js")
+];
+
 var isTest = !!process.argv[2];
 
-readFiles(path.join(__dirname, "src"), ".js", true, function(files){
+readFiles(__dirname, ".js", true, function(files){
 	files.forEach(function(file){
-		babel.transformFile(file, {
-			presets: ['es2015', 'stage-0']
-		}, function(err, result){
-			if(err){
-				throw err;
-			}
+		if(ignores.indexOf(file) === -1 && !/^\/(node_modules)\//.test(file.replace(__dirname, ""))){
+			babel.transformFile(file, {
+				presets: ['es2015', 'stage-0']
+			}, function(err, result){
+				if(err){
+					throw err;
+				}
 
-			if(!isTest){
-				write(file, result.code);
-			}
-		});
+				if(!isTest){
+					write(file, result.code);
+				}
+			});
+		}
 	});
 });
