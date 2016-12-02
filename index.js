@@ -39,7 +39,9 @@ export default function(platform){
 					// 框架启动入口
 					path.join(info.path, "Libraries/Core/InitializeCore.js"),
 					// 原生模块暴露入口
-					path.join(info.path, "Libraries/BatchedBridge/NativeModules.js")
+					path.join(info.path, "Libraries/BatchedBridge/NativeModules.js"),
+					// 资源注册模块
+					path.join(info.path, "Libraries/Image/AssetRegistry.js")
 					// path.join(info.path, "Libraries/JavaScriptAppEngine/Initialization/InitializeJavaScriptAppEngine.js"),
 					// path.join(info.path, "Libraries/BatchedBridge/BatchedBridgedModules/NativeModules.js")
 				];
