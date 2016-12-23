@@ -33,7 +33,12 @@ export default function(dirs, entries, platform, config, callback, depPackages){
 			// 所以此处不再会有isReact、isFbjs
 			glob(isReact || isFbjs ? "**/@(*.js|*.js.flow)" : "**/*.js", {
 				cwd: dir,
-				ignore: isReact ? ["node_modules/**/*", "dist/**/*"] : "node_modules/**/*"
+				ignore: isReact ? [
+								"node_modules/**/*",
+								"dist/**/*"
+							] : [
+								"node_modules/**/*"
+							]
 			}, function(err, _files){
 				files = files.concat(_files.map(file => {
 					return {
@@ -83,7 +88,16 @@ export default function(dirs, entries, platform, config, callback, depPackages){
 						content: transBabel(item.content) //removeDev(transBabel(item.content))
 					};
 
+					// 由于黄色警告模块太过影响操作，所以剔除掉
+					// 此文件是对警告模块的唯一引用（警告模块地址：由于黄色警告模块太过影响操作，所以剔除掉）
+					if(item.file === path.join(item.dir, "Libraries/ReactNative/AppContainer.js")){
+						item.content = utils.removeInvalid(item.content, {
+							"__DEV__": false
+						});
+					}
+
 					if(config.presets){
+						// 过滤掉预设条件下，不会执行到的分支
 						item.content = utils.removeInvalid(item.content, config.presets);
 					}
 				}catch(e){
