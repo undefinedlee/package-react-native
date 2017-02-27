@@ -10,7 +10,7 @@ import glob from "glob";
 // 默认后缀查找顺序
 const extensions = ["", ".native.js", ".js.flow", ".js", "/index.js"];
 
-export default function(dirs, entries, platform, config, callback, depPackages){
+export default function(dirs, entries, platform, config, loader, callback, depPackages){
 	depPackages = depPackages || [];
 
 	// 忽略项目中__tests__、__mocks__目录下的文件
@@ -56,19 +56,28 @@ export default function(dirs, entries, platform, config, callback, depPackages){
 		}).map(function(file){
 			// 读取所有js的内容
 			return function(callback){
-				fs.readFile(file.file, {
-					encoding: "utf8"
-				}, function(err, content){
-					if(err){
-						throw err;
-					}
-
+				loader(file.file, {
+					raw: true
+				}, function(content){
 					callback({
 						dir: file.dir,
 						file: file.file,
-						content: content
+						content: content.toString("utf8")
 					});
 				});
+				// fs.readFile(file.file, {
+				// 	encoding: "utf8"
+				// }, function(err, content){
+				// 	if(err){
+				// 		throw err;
+				// 	}
+
+				// 	callback({
+				// 		dir: file.dir,
+				// 		file: file.file,
+				// 		content: content
+				// 	});
+				// });
 			};
 		})).then(function(items){
 			// 导出模块hash
